@@ -1,18 +1,21 @@
 from __future__ import unicode_literals
+
+import multiprocessing as thr
+import pathlib
+from time import sleep
 from urllib.request import urlopen
-import os
+
+import rule34
 from PIL import Image
 from asciimatics.effects import Print
 from asciimatics.renderers import FigletText, ColourImageFile
 from asciimatics.scene import Scene
-from asciimatics.screen import Screen
-from asciimatics.widgets import Frame, Layout, Label, TextBox, Button, Text
-import rule34
+from asciimatics.screen import Screen, ManagedScreen
+from asciimatics.widgets import Frame, Layout, Label, Button, Text
 
 rule34 = rule34.Sync()
 CurrentPage = []
-
-effects = []
+Reload = False
 
 
 class Browsing(Frame):
@@ -35,48 +38,62 @@ class Browsing(Frame):
         layout = Layout([100])
         self.add_layout(layout)
         layout.add_widget(Label(height=10, label=str(FigletText('Rule 34', 'smslant', screen.width // 4))))
-        search = TextBox(height=1, label='Tags', name='search')
+        search = Text(label='Tags', name='search')
         RunSearch = Text(label='Run search...')
         layout.add_widget(search)
 
         def GetImages():
-            posts = rule34.getImages(search.value[0])
+            global Reload
+            posts = rule34.getImages(search.value)
             for post in posts:
                 CurrentPage.append(post.file_url)
+                Reload = True
             return 0
 
-        def UpdateImage():
+        def UpdateImages():
+            global Reload
             if RunSearch.value == '' or CurrentPage == []:
                 return 0
             else:
                 try:
                     Image.open(urlopen(CurrentPage[int(RunSearch.value)])).save('CurrentImg.png')
-                    effects.append(Print(
-                        screen,
-                        ColourImageFile(screen,
-                                        filename=r'sexysex.png' if not os.path.isfile(
-                                            'CurrentImg.png') else r'CurrentImg.png',
-                                        height=screen.height - 3, uni=True),
-                        y=0,
-                        x=screen.width // 2
-                    ))
-                    screen.reset()
-                    screen.force_update()
-                    print(str(effects))
-                except Exception as err:
-                    print(err, str(effects))
-                    return 0
+                    Reload = True
+                except:
+                    pass
             return 0
 
         layout.add_widget(Button(text='Search...', on_click=GetImages))
-        RunSearch._on_change = UpdateImage
         layout.add_widget(RunSearch)
+        layout.add_widget(Button(text='Run...', on_click=UpdateImages))
         self.fix()
 
 
+def fetchImage(screen, ex):
+    if pathlib.Path(r'CurrentImg.png').exists():
+        image = ColourImageFile(screen, r'CurrentImg.png', height=screen.height)
+    else:
+        image = FigletText(text='NO CURRENT IMAGE')
+    eff = [Print(screen, image, y=0)]
+    eff.extend(ex)
+    screen.play([Scene(eff)])
+
+
+@ManagedScreen
 def MainThread(screen):
-    effects.append(Browsing(screen))
-    screen.play([Scene(effects, 100)])
+    global Reload
+    while True:
+        fetcher = thr.Process(target=fetchImage, daemon=True, args=(screen, [Browsing(screen)]))
+        fetcher.start()
+
+        if Reload:
+            sleep(1)
+            Reload = False
+            fetcher.terminate()
+        else:
+            sleep(30)
+            fetcher.terminate()
+        screen.force_update()
+        screen.refresh()
 
 
-Screen.wrapper(MainThread)
+MainThread()
